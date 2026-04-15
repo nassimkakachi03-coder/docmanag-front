@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Base Tailwind v4 Theme Variables */
+@theme {
+  --color-primary: #0b6bc8;
+  --color-primary-foreground: #ffffff;
+  
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+#root {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
