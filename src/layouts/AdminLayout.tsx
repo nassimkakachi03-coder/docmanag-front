@@ -20,7 +20,8 @@ export default function AdminLayout() {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/contact`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setUnreadCount(res.data.filter((m: any) => !m.read).length);
+        const data = Array.isArray(res.data) ? res.data : [];
+        setUnreadCount(data.filter((m: any) => !m.read).length);
       } catch { }
     };
     fetchUnread();
