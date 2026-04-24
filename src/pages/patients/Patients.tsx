@@ -137,6 +137,7 @@ export default function Patients() {
       caseSummary: patient.caseSummary || '',
       careNotes: patient.careNotes || '',
       xRayUrl: patient.xRayUrl || '',
+      prescriptionUrl: patient.prescriptionUrl || '',
     });
     setModalOpen(true);
   };
