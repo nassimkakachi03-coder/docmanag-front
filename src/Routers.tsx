@@ -6,6 +6,7 @@ import AdminLayout from './layouts/AdminLayout';
 import Login from './pages/auth/Login';
 import DashboardOverview from './pages/dashboard/DashboardOverview';
 import Patients from './pages/patients/Patients';
+import PatientHistory from './pages/patients/PatientHistory';
 import Agenda from './pages/appointments/Agenda';
 import Documents from './pages/documents/Documents';
 import Stock from './pages/inventory/Stock';
@@ -33,6 +34,7 @@ export const CustomRouters = () => {
         >
            <Route index element={<DashboardOverview />} />
            <Route path="patients" element={<Patients />} />
+           <Route path="patients/:id/history" element={<PatientHistory />} />
            <Route path="agenda" element={<Agenda />} />
            <Route path="documents" element={<Documents />} />
            <Route path="stock" element={<Stock />} />

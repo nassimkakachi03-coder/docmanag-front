@@ -1,199 +1,634 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { useAuth } from '../../contexts/AuthContext';
-import { CreditCard, ReceiptText, Trash2, Search, Pencil } from 'lucide-react';
+import {
+  BadgeEuro,
+  CreditCard,
+  Landmark,
+  Pencil,
+  ReceiptText,
+  Search,
+  Trash2,
+  Wallet,
+} from 'lucide-react';
 import Modal from '../../components/Modal';
+import Pagination from '../../components/Pagination';
+import { useAuth } from '../../contexts/AuthContext';
 
 const API = import.meta.env.VITE_API_URL;
 
-const statusBadge = (status: string) => {
-  if (status === 'Paid') return <span className="text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-md font-bold text-[10px] uppercase tracking-wider">Payée</span>;
-  if (status === 'Pending') return <span className="text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md font-bold text-[10px] uppercase tracking-wider">En Attente</span>;
-  if (status === 'Overdue') return <span className="text-red-700 bg-red-100 px-2.5 py-1 rounded-md font-bold text-[10px] uppercase tracking-wider">En Retard</span>;
-  return <span className="text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md font-bold text-[10px] uppercase">{status}</span>;
+const emptyInvoiceForm = {
+  patientId: '',
+  description: '',
+  amount: 0,
+  status: 'Pending',
 };
 
-const emptyForm = { patientId: '', description: '', amount: 0, currency: 'EUR', status: 'Pending' };
+const emptyPaymentForm = {
+  invoiceId: '',
+  amount: 0,
+  method: 'Cash',
+  date: new Date().toISOString().slice(0, 10),
+};
+
+const paymentMethodLabels: Record<string, string> = {
+  Cash: 'Espèces',
+  'Credit Card': 'Carte bancaire',
+  'Bank Transfer': 'Virement',
+};
+
+const invoiceStatusLabels: Record<string, string> = {
+  Pending: 'En attente',
+  Paid: 'Payée',
+  Overdue: 'En retard',
+  Cancelled: 'Annulée',
+};
+
+const invoiceStatusStyles: Record<string, string> = {
+  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
+  Paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Overdue: 'bg-red-50 text-red-700 border-red-200',
+  Cancelled: 'bg-slate-100 text-slate-700 border-slate-200',
+};
 
 export default function Billing() {
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [patients, setPatients] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<any | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [loading, setLoading] = useState(false);
   const { token } = useAuth();
   const headers = { Authorization: `Bearer ${token}` };
 
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [patients, setPatients] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'invoices' | 'payments'>('invoices');
+
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<any | null>(null);
+  const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceForm);
+  const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
+  const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   const fetchData = async () => {
     try {
-      const [iRes, patRes] = await Promise.all([
+      const [invoiceResponse, patientResponse, paymentResponse] = await Promise.all([
         axios.get(`${API}/billing/invoices`, { headers }),
-        axios.get(`${API}/patients`, { headers })
+        axios.get(`${API}/patients`, { headers }),
+        axios.get(`${API}/billing/payments`, { headers }),
       ]);
-      setInvoices(iRes.data);
-      setPatients(patRes.data);
-    } catch (err) { console.error(err); }
+
+      setInvoices(Array.isArray(invoiceResponse.data) ? invoiceResponse.data : []);
+      setPatients(Array.isArray(patientResponse.data) ? patientResponse.data : []);
+      setPayments(Array.isArray(paymentResponse.data) ? paymentResponse.data : []);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  useEffect(() => { if (token) fetchData(); }, [token]);
+  useEffect(() => {
+    if (token) void fetchData();
+  }, [token]);
 
-  const openAdd = () => { setEditing(null); setForm(emptyForm); setModalOpen(true); };
-  const openEdit = (inv: any) => {
-    setEditing(inv);
-    setForm({
-      patientId: inv.patientId?._id || inv.patientId || '',
-      description: inv.items?.[0]?.description || '',
-      amount: inv.totalAmount || 0,
-      currency: inv.currency || 'EUR',
-      status: inv.status || 'Pending'
+  const filteredInvoices = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return invoices;
+
+    return invoices.filter((invoice) =>
+      [
+        invoice.patientName,
+        invoice.patientId?.firstName,
+        invoice.patientId?.lastName,
+        invoice.items?.map((item: any) => item.description).join(' '),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [invoices, search]);
+
+  const filteredPayments = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return payments;
+
+    return payments.filter((payment) =>
+      [
+        payment.invoiceId?.patientName,
+        payment.invoiceId?.patientId?.firstName,
+        payment.invoiceId?.patientId?.lastName,
+        paymentMethodLabels[payment.method] || payment.method,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [payments, search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, activeTab]);
+
+  const paginatedInvoices = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredInvoices.slice(start, start + itemsPerPage);
+  }, [filteredInvoices, currentPage]);
+
+  const paginatedPayments = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredPayments.slice(start, start + itemsPerPage);
+  }, [filteredPayments, currentPage]);
+
+  const totals = useMemo(() => {
+    const totalInvoiced = invoices.reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
+    const totalCollected = payments.reduce((sum, payment) => sum + (payment.amount || 0), 0);
+    const totalPending = invoices
+      .filter((invoice) => invoice.status !== 'Paid')
+      .reduce((sum, invoice) => sum + (invoice.totalAmount || 0), 0);
+
+    return [
+      { label: 'Facturation totale', value: `${totalInvoiced.toLocaleString('fr-DZ')} DZD`, icon: ReceiptText },
+      { label: 'Paiements encaissés', value: `${totalCollected.toLocaleString('fr-DZ')} DZD`, icon: Wallet },
+      { label: 'Reste à suivre', value: `${totalPending.toLocaleString('fr-DZ')} DZD`, icon: CreditCard },
+      { label: 'Règlements saisis', value: payments.length, icon: BadgeEuro },
+    ];
+  }, [invoices, payments]);
+
+  const openCreateInvoice = () => {
+    setEditingInvoice(null);
+    setInvoiceForm(emptyInvoiceForm);
+    setInvoiceModalOpen(true);
+  };
+
+  const openEditInvoice = (invoice: any) => {
+    setEditingInvoice(invoice);
+    setInvoiceForm({
+      patientId: invoice.patientId?._id || invoice.patientId || '',
+      description: invoice.items?.[0]?.description || '',
+      amount: invoice.totalAmount || 0,
+      status: invoice.status || 'Pending',
     });
-    setModalOpen(true);
+    setInvoiceModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const openPaymentModal = (invoice?: any) => {
+    setPaymentForm({
+      invoiceId: invoice?._id || '',
+      amount: invoice?.totalAmount || 0,
+      method: 'Cash',
+      date: new Date().toISOString().slice(0, 10),
+    });
+    setPaymentModalOpen(true);
+  };
+
+  const submitInvoice = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
-    const selectedPatient = patients.find(p => p._id === form.patientId);
-    const payload = {
-      patientId: form.patientId,
-      patientName: selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : '',
-      totalAmount: form.amount,
-      currency: form.currency,
-      status: form.status,
-      items: [{ description: form.description, amount: form.amount }]
-    };
+
     try {
-      if (editing) {
-        const updated = { ...editing, ...payload };
-        setInvoices(invoices.map(i => i._id === editing._id ? updated : i));
+      const selectedPatient = patients.find((patient) => patient._id === invoiceForm.patientId);
+      const payload = {
+        patientId: invoiceForm.patientId,
+        patientName: selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : '',
+        totalAmount: Number(invoiceForm.amount) || 0,
+        currency: 'DZD',
+        status: invoiceForm.status,
+        items: [{ description: invoiceForm.description, cost: Number(invoiceForm.amount) || 0 }],
+      };
+
+      if (editingInvoice) {
+        await axios.put(`${API}/billing/invoices/${editingInvoice._id}`, payload, { headers });
       } else {
-        const res = await axios.post(`${API}/billing/invoices`, payload, { headers });
-        setInvoices([res.data, ...invoices]);
+        await axios.post(`${API}/billing/invoices`, payload, { headers });
       }
-      setModalOpen(false);
-    } catch (err) { alert('Erreur lors de l\'enregistrement.'); }
-    finally { setLoading(false); }
+
+      setInvoiceModalOpen(false);
+      setInvoiceForm(emptyInvoiceForm);
+      await fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Impossible d'enregistrer la facture.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer cette facture ?')) return;
-    setInvoices(invoices.filter(i => i._id !== id));
+  const submitPayment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoading(true);
+
+    try {
+      await axios.post(
+        `${API}/billing/payments`,
+        {
+          ...paymentForm,
+          amount: Number(paymentForm.amount) || 0,
+          currency: 'DZD',
+          date: new Date(`${paymentForm.date}T09:00:00`).toISOString(),
+        },
+        { headers }
+      );
+
+      setPaymentModalOpen(false);
+      setPaymentForm(emptyPaymentForm);
+      await fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Impossible de créer le paiement.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filtered = invoices.filter(inv => {
-    const q = search.toLowerCase();
-    return (inv.patientName || '').toLowerCase().includes(q) ||
-      (inv.items?.[0]?.description || '').toLowerCase().includes(q);
-  });
+  const deleteInvoice = async (id: string) => {
+    if (!window.confirm('Supprimer cette facture ?')) return;
 
-  const totalPaid = invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.totalAmount || 0), 0);
-  const totalPending = invoices.filter(i => i.status === 'Pending').reduce((s, i) => s + (i.totalAmount || 0), 0);
+    try {
+      await axios.delete(`${API}/billing/invoices/${id}`, { headers });
+      await fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Suppression impossible.');
+    }
+  };
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Facturation & Paiements</h1>
-          <p className="text-sm text-slate-500 mt-1">Gérez vos factures et paiements multi-devises.</p>
-        </div>
-        <button onClick={openAdd} className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md transition-all flex items-center gap-2">
-          <CreditCard className="w-4 h-4" /> Nouvelle Facture
-        </button>
-      </div>
-
-      <div className="relative mb-5">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher par patient ou description..." className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all" />
-        {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">✕</button>}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {[
-          { label: 'Total Factures', value: invoices.length, color: 'bg-slate-50', icon: <ReceiptText className="w-5 h-5 text-slate-500" /> },
-          { label: 'Total Encaissé', value: `${totalPaid.toLocaleString()} €`, color: 'bg-emerald-50', icon: <CreditCard className="w-5 h-5 text-emerald-500" /> },
-          { label: 'En Attente', value: `${totalPending.toLocaleString()} €`, color: 'bg-amber-50', icon: <ReceiptText className="w-5 h-5 text-amber-500" /> },
-        ].map(s => (
-          <div key={s.label} className={`${s.color} rounded-xl p-4 flex items-center gap-4 border border-slate-100`}>
-            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm">{s.icon}</div>
-            <div><p className="text-xs font-bold text-slate-500 uppercase tracking-wide">{s.label}</p><p className="text-xl font-black text-slate-800">{s.value}</p></div>
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-900 p-8 text-white shadow-xl">
+        <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,_rgba(74,222,128,0.18),_transparent_60%)]" />
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl font-black tracking-tight">Facturation & Paiement</h1>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={openCreateInvoice}
+              className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 transition hover:bg-emerald-50"
+            >
+              Nouvelle facture
+            </button>
+            <button
+              onClick={() => openPaymentModal()}
+              className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold text-white transition hover:bg-white/20"
+            >
+              Saisir un paiement
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {totals.map(({ label, value, icon: Icon }) => (
+          <article key={label} className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-700">
+                <Icon className="h-5 w-5" />
+              </div>
+              <span className="text-2xl font-black text-slate-900">{value}</span>
+            </div>
+            <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
+          </article>
         ))}
-      </div>
+      </section>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-100">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              {['Référence', 'Patient', 'Description', 'Montant', 'Statut', 'Actions'].map(h => (
-                <th key={h} className="p-4 text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.length === 0 ? (
-              <tr><td colSpan={6} className="p-10 text-center text-slate-400 font-medium">
-                {search ? `Aucun résultat pour « ${search} »` : 'Aucune facture créée.'}
-              </td></tr>
-            ) : filtered.map(inv => (
-              <tr key={inv._id} className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 text-sm font-black text-slate-700">#{inv._id.toString().substring(0, 8).toUpperCase()}</td>
-                <td className="p-4 text-sm font-bold text-teal-700">{inv.patientName || `${inv.patientId?.firstName || ''} ${inv.patientId?.lastName || ''}`}</td>
-                <td className="p-4 text-sm text-slate-600">{inv.items?.[0]?.description || '-'}</td>
-                <td className="p-4 text-sm font-black text-slate-800">{(inv.totalAmount || 0).toLocaleString()} <span className="text-xs font-semibold text-slate-500">{inv.currency}</span></td>
-                <td className="p-4">{statusBadge(inv.status)}</td>
-                <td className="p-4">
-                  <div className="flex gap-2">
-                    <button onClick={() => openEdit(inv)} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"><Pencil className="w-4 h-4" /></button>
-                    <button onClick={() => handleDelete(inv._id)} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 className="w-4 h-4" /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <section className="rounded-[30px] border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setActiveTab('invoices')}
+              className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${activeTab === 'invoices' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              Factures
+            </button>
+            <button
+              onClick={() => setActiveTab('payments')}
+              className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${activeTab === 'payments' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              Paiements
+            </button>
+          </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Modifier la Facture' : 'Nouvelle Facture'} size="md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Patient *</label>
-            <select required value={form.patientId} onChange={e => setForm({ ...form, patientId: e.target.value })} className="w-full border border-slate-300 bg-white rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500">
+          <div className="relative w-full max-w-md">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={activeTab === 'invoices' ? 'Rechercher une facture...' : 'Rechercher un paiement...'}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+            />
+          </div>
+        </div>
+
+        {activeTab === 'invoices' ? (
+          <>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left">
+              <thead className="bg-slate-50">
+                <tr className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                  <th className="px-5 py-4">Référence</th>
+                  <th className="px-5 py-4">Patient</th>
+                  <th className="px-5 py-4">Acte / soin</th>
+                  <th className="px-5 py-4">Montant</th>
+                  <th className="px-5 py-4">Statut</th>
+                  <th className="px-5 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-16 text-center text-sm font-medium text-slate-400">
+                      {search ? `Aucune facture pour « ${search} ».` : 'Aucune facture enregistrée.'}
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedInvoices.map((invoice) => (
+                    <tr key={invoice._id} className="border-t border-slate-100">
+                      <td className="px-5 py-4 font-black text-slate-900">#{invoice._id.slice(0, 8).toUpperCase()}</td>
+                      <td className="px-5 py-4 text-sm text-slate-700">
+                        {invoice.patientName || `${invoice.patientId?.firstName || ''} ${invoice.patientId?.lastName || ''}`}
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{invoice.items?.map((item: any) => item.description).join(', ') || '-'}</td>
+                      <td className="px-5 py-4 text-sm font-black text-slate-900">{(invoice.totalAmount || 0).toLocaleString('fr-DZ')} DZD</td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${invoiceStatusStyles[invoice.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                          {invoiceStatusLabels[invoice.status] || invoice.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex justify-end gap-2">
+                          {invoice.status !== 'Paid' && (
+                            <button
+                              onClick={() => openPaymentModal(invoice)}
+                              className="rounded-xl bg-emerald-50 p-2 text-emerald-700 transition hover:bg-emerald-100"
+                              title="Enregistrer un paiement"
+                            >
+                              <Wallet className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openEditInvoice(invoice)}
+                            className="rounded-xl bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"
+                            title="Modifier"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteInvoice(invoice._id)}
+                            className="rounded-xl bg-red-50 p-2 text-red-600 transition hover:bg-red-100"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <Pagination 
+            currentPage={currentPage} 
+            totalItems={filteredInvoices.length} 
+            itemsPerPage={itemsPerPage} 
+            onPageChange={setCurrentPage} 
+          />
+          </>
+        ) : (
+          <>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left">
+              <thead className="bg-slate-50">
+                <tr className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                  <th className="px-5 py-4">Patient</th>
+                  <th className="px-5 py-4">Facture</th>
+                  <th className="px-5 py-4">Méthode</th>
+                  <th className="px-5 py-4">Date</th>
+                  <th className="px-5 py-4">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedPayments.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-16 text-center text-sm font-medium text-slate-400">
+                      {search ? `Aucun paiement pour « ${search} ».` : 'Aucun paiement enregistré.'}
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedPayments.map((payment) => (
+                    <tr key={payment._id} className="border-t border-slate-100">
+                      <td className="px-5 py-4 text-sm font-semibold text-slate-900">
+                        {payment.invoiceId?.patientName ||
+                          `${payment.invoiceId?.patientId?.firstName || ''} ${payment.invoiceId?.patientId?.lastName || ''}`}
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-600">#{payment.invoiceId?._id?.slice(0, 8).toUpperCase() || 'N/A'}</td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{paymentMethodLabels[payment.method] || payment.method}</td>
+                      <td className="px-5 py-4 text-sm text-slate-600">
+                        {new Date(payment.date || payment.createdAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </td>
+                      <td className="px-5 py-4 text-sm font-black text-slate-900">{(payment.amount || 0).toLocaleString('fr-DZ')} DZD</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <Pagination 
+            currentPage={currentPage} 
+            totalItems={filteredPayments.length} 
+            itemsPerPage={itemsPerPage} 
+            onPageChange={setCurrentPage} 
+          />
+          </>
+        )}
+      </section>
+
+      <Modal
+        isOpen={invoiceModalOpen}
+        onClose={() => {
+          setInvoiceModalOpen(false);
+          setEditingInvoice(null);
+          setInvoiceForm(emptyInvoiceForm);
+        }}
+        title={editingInvoice ? 'Modifier la facture' : 'Créer une facture'}
+        size="md"
+      >
+        <form onSubmit={submitInvoice} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Patient *</label>
+            <select
+              required
+              value={invoiceForm.patientId}
+              onChange={(event) => setInvoiceForm((current) => ({ ...current, patientId: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+            >
               <option value="">Sélectionner un patient...</option>
-              {patients.map(p => <option key={p._id} value={p._id}>{p.firstName} {p.lastName}</option>)}
+              {patients.map((patient) => (
+                <option key={patient._id} value={patient._id}>
+                  {patient.firstName} {patient.lastName}
+                </option>
+              ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Description *</label>
-            <input required value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Ex: Détartrage, Pose d'appareil..." className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-teal-500" />
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Description du soin *</label>
+            <input
+              required
+              value={invoiceForm.description}
+              onChange={(event) => setInvoiceForm((current) => ({ ...current, description: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              placeholder="Ex: Détartrage, extraction, pose de couronne..."
+            />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Montant *</label>
-              <input required type="number" min={0} step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })} className="w-full border border-slate-300 rounded-lg p-2.5 text-sm bg-white outline-none focus:ring-2 focus:ring-teal-500" />
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Montant (DZD) *</label>
+              <input
+                required
+                type="number"
+                min={0}
+                step="1"
+                value={invoiceForm.amount}
+                onChange={(event) => setInvoiceForm((current) => ({ ...current, amount: Number(event.target.value) }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Devise</label>
-              <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} className="w-full border border-slate-300 bg-white rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500">
-                <option value="EUR">Euros (€)</option>
-                <option value="MAD">Dirhams (DH)</option>
-                <option value="USD">Dollars ($)</option>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Statut</label>
+              <select
+                value={invoiceForm.status}
+                onChange={(event) => setInvoiceForm((current) => ({ ...current, status: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              >
+                <option value="Pending">En attente</option>
+                <option value="Paid">Payée</option>
+                <option value="Overdue">En retard</option>
+                <option value="Cancelled">Annulée</option>
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Statut</label>
-            <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full border border-slate-300 bg-white rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500">
-              <option value="Pending">En attente</option>
-              <option value="Paid">Payé</option>
-              <option value="Overdue">En retard</option>
+
+
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setInvoiceModalOpen(false)}
+              className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-200"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {loading ? 'Enregistrement...' : editingInvoice ? 'Mettre à jour' : 'Créer la facture'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={paymentModalOpen}
+        onClose={() => {
+          setPaymentModalOpen(false);
+          setPaymentForm(emptyPaymentForm);
+        }}
+        title="Enregistrer un paiement"
+        size="md"
+      >
+        <form onSubmit={submitPayment} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Facture *</label>
+            <select
+              required
+              value={paymentForm.invoiceId}
+              onChange={(event) => {
+                const nextInvoiceId = event.target.value;
+                const selectedInvoice = invoices.find((invoice) => invoice._id === nextInvoiceId);
+                setPaymentForm((current) => ({
+                  ...current,
+                  invoiceId: nextInvoiceId,
+                  amount: selectedInvoice?.totalAmount || current.amount,
+                }));
+              }}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+            >
+              <option value="">Sélectionner une facture...</option>
+              {invoices.map((invoice) => (
+                <option key={invoice._id} value={invoice._id}>
+                  #{invoice._id.slice(0, 8).toUpperCase()} - {invoice.patientName || `${invoice.patientId?.firstName || ''} ${invoice.patientId?.lastName || ''}`}
+                </option>
+              ))}
             </select>
           </div>
-          <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
-            <button type="button" onClick={() => setModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200">Annuler</button>
-            <button type="submit" disabled={loading} className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-bold">
-              {loading ? 'Enregistrement...' : (editing ? 'Enregistrer' : 'Créer la Facture')}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Montant payé (DZD) *</label>
+              <input
+                required
+                type="number"
+                min={0}
+                step="1"
+                value={paymentForm.amount}
+                onChange={(event) => setPaymentForm((current) => ({ ...current, amount: Number(event.target.value) }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Date *</label>
+              <input
+                required
+                type="date"
+                value={paymentForm.date}
+                onChange={(event) => setPaymentForm((current) => ({ ...current, date: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Mode de règlement</label>
+            <div className="grid gap-2 md:grid-cols-3">
+              {[
+                { value: 'Cash', label: 'Espèces', icon: Wallet },
+                { value: 'Credit Card', label: 'Carte', icon: CreditCard },
+                { value: 'Bank Transfer', label: 'Virement', icon: Landmark },
+              ].map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPaymentForm((current) => ({ ...current, method: value }))}
+                  className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                    paymentForm.method === value
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setPaymentModalOpen(false)}
+              className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-200"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {loading ? 'Enregistrement...' : 'Créer le paiement'}
             </button>
           </div>
         </form>

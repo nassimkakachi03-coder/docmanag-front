@@ -1,19 +1,46 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Trash2, CalendarDays, Search, Pencil } from 'lucide-react';
+import {
+  CalendarDays,
+  Clock3,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
 import Modal from '../../components/Modal';
+import Pagination from '../../components/Pagination';
+import { useAuth } from '../../contexts/AuthContext';
 
 const API = import.meta.env.VITE_API_URL;
 
-const emptyForm = { patientId: '', reason: '', date: '', time: '', duration: 30, status: 'Scheduled' };
+const emptyForm = {
+  patientId: '',
+  reason: '',
+  date: '',
+  time: '',
+  duration: 30,
+  status: 'Scheduled',
+  notes: '',
+};
 
-const statusBadge = (status: string) => {
-  const map: Record<string, string> = { Scheduled: 'bg-teal-100 text-teal-700', Completed: 'bg-emerald-100 text-emerald-700', Cancelled: 'bg-red-100 text-red-700' };
-  return <span className={`px-2.5 py-1 rounded-md font-bold text-[10px] uppercase tracking-wider ${map[status] || 'bg-slate-100 text-slate-600'}`}>{status}</span>;
+const statusLabels: Record<string, string> = {
+  Scheduled: 'Planifié',
+  Completed: 'Terminé',
+  Cancelled: 'Annulé',
+};
+
+const statusStyles: Record<string, string> = {
+  Scheduled: 'bg-teal-50 text-teal-700 border-teal-200',
+  Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Cancelled: 'bg-red-50 text-red-700 border-red-200',
 };
 
 export default function Agenda() {
+  const { token, user } = useAuth();
+  const headers = { Authorization: `Bearer ${token}` };
+
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -21,176 +48,364 @@ export default function Agenda() {
   const [editing, setEditing] = useState<any | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
-  const { token, user } = useAuth();
-  const headers = { Authorization: `Bearer ${token}` };
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const fetchData = async () => {
     try {
-      const [aRes, patRes] = await Promise.all([
+      const [appointmentsResponse, patientsResponse] = await Promise.all([
         axios.get(`${API}/appointments`, { headers }),
-        axios.get(`${API}/patients`, { headers })
+        axios.get(`${API}/patients`, { headers }),
       ]);
-      setAppointments(aRes.data);
-      setPatients(patRes.data);
-    } catch (err) { console.error(err); }
+
+      const nextAppointments = Array.isArray(appointmentsResponse.data) ? appointmentsResponse.data : [];
+      setAppointments(nextAppointments.sort((left: any, right: any) => new Date(left.date).getTime() - new Date(right.date).getTime()));
+      setPatients(Array.isArray(patientsResponse.data) ? patientsResponse.data : []);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  useEffect(() => { if (token) fetchData(); }, [token]);
+  useEffect(() => {
+    if (token) void fetchData();
+  }, [token]);
 
-  const openAdd = () => { setEditing(null); setForm(emptyForm); setModalOpen(true); };
-  const openEdit = (a: any) => {
-    setEditing(a);
-    const d = new Date(a.date);
+  const filteredAppointments = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return appointments;
+
+    return appointments.filter((appointment) =>
+      [
+        appointment.patientName,
+        appointment.patientId?.firstName,
+        appointment.patientId?.lastName,
+        appointment.reason,
+        appointment.notes,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [appointments, search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const paginatedAppointments = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAppointments.slice(start, start + itemsPerPage);
+  }, [filteredAppointments, currentPage]);
+
+  const todayAppointments = useMemo(() => {
+    const today = new Date().toDateString();
+    return appointments.filter((appointment) => new Date(appointment.date).toDateString() === today);
+  }, [appointments]);
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    setForm(emptyForm);
+  };
+
+  const openCreateModal = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+
+  const openEditModal = (appointment: any) => {
+    const appointmentDate = new Date(appointment.date);
+    setEditing(appointment);
     setForm({
-      patientId: a.patientId?._id || a.patientId || '',
-      reason: a.reason || '',
-      date: d.toISOString().substring(0, 10),
-      time: d.toTimeString().substring(0, 5),
-      duration: a.duration || 30,
-      status: a.status || 'Scheduled'
+      patientId: appointment.patientId?._id || appointment.patientId || '',
+      reason: appointment.reason || '',
+      date: appointmentDate.toISOString().slice(0, 10),
+      time: appointmentDate.toTimeString().slice(0, 5),
+      duration: appointment.duration || 30,
+      status: appointment.status || 'Scheduled',
+      notes: appointment.notes || '',
     });
     setModalOpen(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
-    const selectedPatient = patients.find(p => p._id === form.patientId);
-    const payload = {
-      ...form,
-      patientName: selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : '',
-      doctorId: user?.id,
-      date: new Date(`${form.date}T${form.time}`).toISOString(),
-    };
+
+    if (!form.patientId || !form.date || !form.time) {
+      alert('Veuillez renseigner le patient, la date et l’heure du rendez-vous.');
+      setLoading(false);
+      return;
+    }
+
+    const selectedPatient = patients.find((patient) => patient._id === form.patientId);
+    const doctorId = typeof user?.id === 'string' && /^[a-fA-F0-9]{24}$/.test(user.id) ? user.id : undefined;
+
     try {
+      const payload = {
+        patientId: form.patientId,
+        patientName: selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : '',
+        reason: form.reason,
+        date: new Date(`${form.date}T${form.time}`).toISOString(),
+        duration: Number(form.duration) || 30,
+        status: form.status,
+        notes: form.notes,
+        ...(doctorId ? { doctorId } : {}),
+      };
+
       if (editing) {
-        const res = await axios.put(`${API}/appointments/${editing._id}`, payload, { headers });
-        setAppointments(appointments.map(a => a._id === editing._id ? res.data : a));
+        await axios.put(`${API}/appointments/${editing._id}`, payload, { headers });
       } else {
-        const res = await axios.post(`${API}/appointments`, payload, { headers });
-        setAppointments([res.data, ...appointments]);
+        await axios.post(`${API}/appointments`, payload, { headers });
       }
-      setModalOpen(false);
-    } catch (err) { alert('Erreur lors de l\'enregistrement.'); }
-    finally { setLoading(false); }
+
+      closeModal();
+      await fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Impossible d'enregistrer ce rendez-vous.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce rendez-vous ?')) return;
-    try { await axios.delete(`${API}/appointments/${id}`, { headers }); } catch { }
-    setAppointments(appointments.filter(a => a._id !== id));
+  const removeAppointment = async (id: string) => {
+    if (!window.confirm('Supprimer ce rendez-vous ?')) return;
+
+    try {
+      await axios.delete(`${API}/appointments/${id}`, { headers });
+      await fetchData();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Suppression impossible.');
+    }
   };
-
-  const filtered = appointments.filter(a => {
-    const q = search.toLowerCase();
-    return (a.patientName || '').toLowerCase().includes(q) || (a.reason || '').toLowerCase().includes(q);
-  });
-
-  const todayCount = appointments.filter(a => new Date(a.date).toDateString() === new Date().toDateString()).length;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Agenda Médical & Planification</h1>
-          <p className="text-sm text-slate-500 mt-1">Planifiez et gérez les rendez-vous de la clinique.</p>
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-teal-900 p-8 text-white shadow-xl">
+        <div className="absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top_right,_rgba(34,211,238,0.18),_transparent_60%)]" />
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl font-black tracking-tight">Agenda Clinique</h1>
+          </div>
+          <button
+            onClick={openCreateModal}
+            className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900 transition hover:bg-teal-50"
+          >
+            <Plus className="h-4 w-4" />
+            Nouveau rendez-vous
+          </button>
         </div>
-        <button onClick={openAdd} className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md transition-all flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Nouveau RDV
-        </button>
-      </div>
+      </section>
 
-      <div className="relative mb-5">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher par patient ou motif..." className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all" />
-        {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">✕</button>}
-      </div>
+      <section className="grid gap-4 md:grid-cols-3">
+        {[
+          { label: 'Rendez-vous totaux', value: appointments.length, icon: CalendarDays },
+          { label: "Aujourd'hui", value: todayAppointments.length, icon: Clock3 },
+          { label: 'Patients concernés', value: new Set(appointments.map((appointment) => appointment.patientId?._id || appointment.patientId)).size, icon: UserRound },
+        ].map(({ label, value, icon: Icon }) => (
+          <article key={label} className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="rounded-2xl bg-teal-50 p-3 text-teal-700">
+                <Icon className="h-5 w-5" />
+              </div>
+              <span className="text-3xl font-black text-slate-900">{value}</span>
+            </div>
+            <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
+          </article>
+        ))}
+      </section>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-slate-50 rounded-xl p-4 flex items-center gap-4 border border-slate-100">
-          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm"><CalendarDays className="w-5 h-5 text-teal-500" /></div>
-          <div><p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Total RDV</p><p className="text-xl font-black text-slate-800">{appointments.length}</p></div>
-        </div>
-        <div className="bg-teal-50 rounded-xl p-4 flex items-center gap-4 border border-teal-100">
-          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm"><CalendarDays className="w-5 h-5 text-teal-600" /></div>
-          <div><p className="text-xs font-bold text-teal-600 uppercase tracking-wide">Aujourd'hui</p><p className="text-xl font-black text-slate-800">{todayCount}</p></div>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto rounded-xl border border-slate-100">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              {['Date & Heure', 'Patient', 'Motif', 'Durée', 'Statut', 'Actions'].map(h => (
-                <th key={h} className="p-4 text-xs font-bold text-slate-500 uppercase tracking-widest">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.length === 0 ? (
-              <tr><td colSpan={6} className="p-10 text-center text-slate-400 font-medium">
-                {search ? `Aucun résultat pour « ${search} »` : 'Aucun rendez-vous planifié.'}
-              </td></tr>
-            ) : filtered.map(app => (
-              <tr key={app._id} className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 text-sm font-black text-slate-800 whitespace-nowrap">{new Date(app.date).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                <td className="p-4 text-sm font-bold text-teal-700">{app.patientName || `${app.patientId?.firstName || ''} ${app.patientId?.lastName || ''}`}</td>
-                <td className="p-4 text-sm text-slate-600">{app.reason}</td>
-                <td className="p-4 text-sm text-slate-500 font-semibold">{app.duration} min</td>
-                <td className="p-4">{statusBadge(app.status)}</td>
-                <td className="p-4">
-                  <div className="flex gap-2">
-                    <button onClick={() => openEdit(app)} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"><Pencil className="w-4 h-4" /></button>
-                    <button onClick={() => handleDelete(app._id)} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Modifier le Rendez-vous' : 'Nouveau Rendez-vous'} size="lg">
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <section className="rounded-[30px] border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Patient *</label>
-            <select required value={form.patientId} onChange={e => setForm({ ...form, patientId: e.target.value })} className="w-full border border-slate-300 bg-white rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-teal-500 text-sm">
+            <h2 className="text-lg font-black text-slate-900">Planning des rendez-vous</h2>
+            <p className="text-sm text-slate-500">Le formulaire accepte maintenant plusieurs statuts et des notes détaillées pour chaque soin.</p>
+          </div>
+          <div className="relative w-full max-w-md">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Rechercher un rendez-vous..."
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left">
+            <thead className="bg-slate-50">
+              <tr className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                <th className="px-5 py-4">Date</th>
+                <th className="px-5 py-4">Patient</th>
+                <th className="px-5 py-4">Motif</th>
+                <th className="px-5 py-4">Durée</th>
+                <th className="px-5 py-4">Statut</th>
+                <th className="px-5 py-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedAppointments.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-16 text-center text-sm font-medium text-slate-400">
+                    {search ? `Aucun rendez-vous pour « ${search} ».` : 'Aucun rendez-vous planifié.'}
+                  </td>
+                </tr>
+              ) : (
+                paginatedAppointments.map((appointment) => (
+                  <tr key={appointment._id} className="border-t border-slate-100">
+                    <td className="px-5 py-4 text-sm font-semibold text-slate-900">
+                      {new Date(appointment.date).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </td>
+                    <td className="px-5 py-4 text-sm text-slate-700">
+                      {appointment.patientName || `${appointment.patientId?.firstName || ''} ${appointment.patientId?.lastName || ''}`}
+                    </td>
+                    <td className="px-5 py-4 text-sm text-slate-600">
+                      <p className="font-semibold text-slate-900">{appointment.reason}</p>
+                      <p className="mt-1 text-xs text-slate-500">{appointment.notes || 'Sans note complémentaire'}</p>
+                    </td>
+                    <td className="px-5 py-4 text-sm text-slate-600">{appointment.duration || 30} min</td>
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[appointment.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                        {statusLabels[appointment.status] || appointment.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => openEditModal(appointment)}
+                          className="rounded-xl bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => removeAppointment(appointment._id)}
+                          className="rounded-xl bg-red-50 p-2 text-red-600 transition hover:bg-red-100"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        
+        <Pagination 
+          currentPage={currentPage} 
+          totalItems={filteredAppointments.length} 
+          itemsPerPage={itemsPerPage} 
+          onPageChange={setCurrentPage} 
+        />
+      </section>
+
+      <Modal isOpen={modalOpen} onClose={closeModal} title={editing ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'} size="lg">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Patient *</label>
+            <select
+              required
+              value={form.patientId}
+              onChange={(event) => setForm((current) => ({ ...current, patientId: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+            >
               <option value="">Sélectionner un patient...</option>
-              {patients.map(p => <option key={p._id} value={p._id}>{p.firstName} {p.lastName}</option>)}
+              {patients.map((patient) => (
+                <option key={patient._id} value={patient._id}>
+                  {patient.firstName} {patient.lastName}
+                </option>
+              ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Motif *</label>
-            <input required value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500" placeholder="Ex: Douleur dentaire..." />
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Motif *</label>
+            <input
+              required
+              value={form.reason}
+              onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+              placeholder="Ex: contrôle, douleur, extraction..."
+            />
           </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Date *</label>
-              <input required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500" />
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Date *</label>
+              <input
+                required
+                type="date"
+                value={form.date}
+                onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+              />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Heure *</label>
-              <input required type="time" value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500" />
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Heure *</label>
+              <input
+                required
+                type="time"
+                value={form.time}
+                onChange={(event) => setForm((current) => ({ ...current, time: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+              />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Durée (min)</label>
-              <input type="number" min={5} value={form.duration} onChange={e => setForm({ ...form, duration: Number(e.target.value) })} className="w-full border border-slate-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500" />
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Durée (min)</label>
+              <input
+                type="number"
+                min={5}
+                value={form.duration}
+                onChange={(event) => setForm((current) => ({ ...current, duration: Number(event.target.value) }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+              />
             </div>
           </div>
-          {editing && (
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Statut</label>
-              <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="w-full border border-slate-300 bg-white rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500">
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Statut</label>
+              <select
+                value={form.status}
+                onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+              >
                 <option value="Scheduled">Planifié</option>
                 <option value="Completed">Terminé</option>
                 <option value="Cancelled">Annulé</option>
               </select>
             </div>
-          )}
-          <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
-            <button type="button" onClick={() => setModalOpen(false)} className="px-5 py-2.5 rounded-lg text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200">Annuler</button>
-            <button type="submit" disabled={loading} className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-bold">
-              {loading ? 'Enregistrement...' : (editing ? 'Enregistrer les modifications' : 'Confirmer le RDV')}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-sm font-semibold text-slate-700">Notes de consultation</label>
+            <textarea
+              rows={4}
+              value={form.notes}
+              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
+              placeholder="Précisions utiles pour l'équipe ou pour le dossier patient..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={closeModal}
+              className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-200"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-2xl bg-teal-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-700 disabled:opacity-60"
+            >
+              {loading ? 'Enregistrement...' : editing ? 'Mettre à jour' : 'Créer le rendez-vous'}
             </button>
           </div>
         </form>

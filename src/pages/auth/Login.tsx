@@ -65,7 +65,7 @@ export default function Login() {
             </div>
             <div className="text-left">
               <h1 className="text-3xl font-black text-white tracking-tight">DocManag</h1>
-              <p className="text-teal-200 text-sm font-medium">Clinic Management System</p>
+              <p className="text-teal-200 text-sm font-medium">Plateforme de gestion clinique</p>
             </div>
           </div>
 
@@ -102,7 +102,7 @@ export default function Login() {
             </div>
             <div>
               <h1 className="text-xl font-black text-slate-800">DocManag</h1>
-              <p className="text-slate-500 text-xs">Clinic Management System</p>
+              <p className="text-slate-500 text-xs">Plateforme de gestion clinique</p>
             </div>
           </div>
 
