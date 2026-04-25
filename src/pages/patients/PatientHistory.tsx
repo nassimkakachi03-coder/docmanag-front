@@ -61,7 +61,8 @@ export default function PatientHistory() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'timeline' | 'appointments' | 'prescriptions' | 'billing'>('timeline');
   const [xRayUrl, setXRayUrl] = useState('');
-  const [savingXRay, setSavingXRay] = useState(false);
+  const [prescriptionUrl, setPrescriptionUrl] = useState('');
+  const [savingUrls, setSavingUrls] = useState(false);
 
   const loadHistory = async () => {
     if (!token || !id) return;
@@ -70,6 +71,7 @@ export default function PatientHistory() {
       const response = await axios.get(`${API}/patients/${id}/history`, { headers });
       setData(response.data);
       setXRayUrl(response.data.patient?.xRayUrl || '');
+      setPrescriptionUrl(response.data.patient?.prescriptionUrl || '');
     } catch (error) {
       console.error(error);
       setData(null);
@@ -82,15 +84,29 @@ export default function PatientHistory() {
     void loadHistory();
   }, [token, id]);
 
-  const saveXRay = async () => {
-    setSavingXRay(true);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'xRay' | 'prescription') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result;
+      if (typeof result === 'string') {
+        if (field === 'xRay') setXRayUrl(result);
+        if (field === 'prescription') setPrescriptionUrl(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveUrls = async () => {
+    setSavingUrls(true);
     try {
-      await axios.put(`${API}/patients/${id}`, { xRayUrl }, { headers });
+      await axios.put(`${API}/patients/${id}`, { xRayUrl, prescriptionUrl }, { headers });
       await loadHistory();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Impossible de sauvegarder la radiographie.');
+      alert(error.response?.data?.message || 'Impossible de sauvegarder les documents.');
     } finally {
-      setSavingXRay(false);
+      setSavingUrls(false);
     }
   };
 
@@ -273,7 +289,6 @@ export default function PatientHistory() {
                         </div>
                         <div className="text-sm text-slate-500 lg:text-right">
                           <p className="font-semibold text-slate-900">{formatDateTime(appointment.date)}</p>
-                          <p className="mt-1">{appointment.duration || 30} min</p>
                           <p className="mt-1">{appointmentStatus[appointment.status] || appointment.status}</p>
                         </div>
                       </div>
@@ -387,7 +402,6 @@ export default function PatientHistory() {
               <p><span className="font-bold text-slate-900">Nom:</span> {patient.firstName} {patient.lastName}</p>
               <p><span className="font-bold text-slate-900">Téléphone:</span> {patient.phone || 'Non renseigné'}</p>
               <p><span className="font-bold text-slate-900">Email:</span> {patient.email || 'Non renseigné'}</p>
-              <p><span className="font-bold text-slate-900">Adresse:</span> {patient.address || 'Non renseignée'}</p>
               <p><span className="font-bold text-slate-900">Genre:</span> {patient.gender === 'Male' ? 'Homme' : patient.gender === 'Female' ? 'Femme' : 'Non renseigné'}</p>
             </div>
           </section>
@@ -433,19 +447,47 @@ export default function PatientHistory() {
             )}
 
             <div className="mt-4 space-y-3">
-              <input
-                value={xRayUrl}
-                onChange={(event) => setXRayUrl(event.target.value)}
-                type="url"
-                placeholder="https://.../radio.jpg"
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
-              />
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Ajouter/Modifier Radiographie (Image)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileChange(e, 'xRay')}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+                />
+                {xRayUrl && xRayUrl !== data?.patient?.xRayUrl && <p className="mt-1 text-xs text-teal-600 font-bold">Nouvelle image prête à être sauvegardée ✓</p>}
+              </div>
+              
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Ajouter/Modifier Ordonnance (PDF)</label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => handleFileChange(e, 'prescription')}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+                  />
+                  {prescriptionUrl && prescriptionUrl !== data?.patient?.prescriptionUrl && <p className="text-xs text-teal-600 font-bold">Nouveau fichier prêt à être sauvegardé ✓</p>}
+                  {data?.patient?.prescriptionUrl && prescriptionUrl === data?.patient?.prescriptionUrl && (
+                    <a
+                      href={prescriptionUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:underline mt-2"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Ouvrir l'ordonnance actuelle
+                    </a>
+                  )}
+                </div>
+              </div>
+
               <button
-                onClick={saveXRay}
-                disabled={savingXRay}
-                className="w-full rounded-2xl bg-teal-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-700 disabled:opacity-60"
+                onClick={saveUrls}
+                disabled={savingUrls}
+                className="w-full mt-2 rounded-2xl bg-teal-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-700 disabled:opacity-60"
               >
-                {savingXRay ? 'Sauvegarde...' : 'Enregistrer la radio'}
+                {savingUrls ? 'Sauvegarde...' : 'Enregistrer les documents'}
               </button>
             </div>
           </section>

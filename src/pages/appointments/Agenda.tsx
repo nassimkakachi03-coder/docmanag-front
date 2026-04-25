@@ -20,19 +20,20 @@ const emptyForm = {
   reason: '',
   date: '',
   time: '',
-  duration: 30,
   status: 'Scheduled',
   notes: '',
 };
 
 const statusLabels: Record<string, string> = {
   Scheduled: 'Planifié',
+  Pending: 'En attente',
   Completed: 'Terminé',
   Cancelled: 'Annulé',
 };
 
 const statusStyles: Record<string, string> = {
   Scheduled: 'bg-teal-50 text-teal-700 border-teal-200',
+  Pending: 'bg-amber-50 text-amber-700 border-amber-200',
   Completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   Cancelled: 'bg-red-50 text-red-700 border-red-200',
 };
@@ -123,7 +124,6 @@ export default function Agenda() {
       reason: appointment.reason || '',
       date: appointmentDate.toISOString().slice(0, 10),
       time: appointmentDate.toTimeString().slice(0, 5),
-      duration: appointment.duration || 30,
       status: appointment.status || 'Scheduled',
       notes: appointment.notes || '',
     });
@@ -149,7 +149,6 @@ export default function Agenda() {
         patientName: selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : '',
         reason: form.reason,
         date: new Date(`${form.date}T${form.time}`).toISOString(),
-        duration: Number(form.duration) || 30,
         status: form.status,
         notes: form.notes,
         ...(doctorId ? { doctorId } : {}),
@@ -241,7 +240,6 @@ export default function Agenda() {
                 <th className="px-5 py-4">Date</th>
                 <th className="px-5 py-4">Patient</th>
                 <th className="px-5 py-4">Motif</th>
-                <th className="px-5 py-4">Durée</th>
                 <th className="px-5 py-4">Statut</th>
                 <th className="px-5 py-4 text-right">Actions</th>
               </tr>
@@ -266,7 +264,6 @@ export default function Agenda() {
                       <p className="font-semibold text-slate-900">{appointment.reason}</p>
                       <p className="mt-1 text-xs text-slate-500">{appointment.notes || 'Sans note complémentaire'}</p>
                     </td>
-                    <td className="px-5 py-4 text-sm text-slate-600">{appointment.duration || 30} min</td>
                     <td className="px-5 py-4">
                       <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[appointment.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                         {statusLabels[appointment.status] || appointment.status}
@@ -333,7 +330,7 @@ export default function Agenda() {
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-sm font-semibold text-slate-700">Date *</label>
               <input
@@ -354,16 +351,6 @@ export default function Agenda() {
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-slate-700">Durée (min)</label>
-              <input
-                type="number"
-                min={5}
-                value={form.duration}
-                onChange={(event) => setForm((current) => ({ ...current, duration: Number(event.target.value) }))}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
-              />
-            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -374,9 +361,10 @@ export default function Agenda() {
                 onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10"
               >
-                <option value="Scheduled">Planifié</option>
+                <option value="Scheduled">Planifié (Approuvé)</option>
+                <option value="Pending">Demande en attente</option>
                 <option value="Completed">Terminé</option>
-                <option value="Cancelled">Annulé</option>
+                <option value="Cancelled">Annulé / Refusé</option>
               </select>
             </div>
           </div>

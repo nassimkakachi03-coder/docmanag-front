@@ -28,7 +28,6 @@ const emptyForm = {
   gender: '',
   phone: '',
   email: '',
-  address: '',
   medicalHistory: '',
   caseSummary: '',
   careNotes: '',
@@ -132,7 +131,6 @@ export default function Patients() {
       gender: patient.gender || '',
       phone: patient.phone || '',
       email: patient.email || '',
-      address: patient.address || '',
       medicalHistory: patient.medicalHistory || '',
       caseSummary: patient.caseSummary || '',
       careNotes: patient.careNotes || '',
@@ -146,6 +144,19 @@ export default function Patients() {
     setModalOpen(false);
     setEditing(null);
     setForm(emptyForm);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'xRayUrl' | 'prescriptionUrl') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result;
+      if (typeof result === 'string') {
+        setForm((prev) => ({ ...prev, [field]: result }));
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -391,7 +402,6 @@ export default function Patients() {
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Coordonnées</p>
                   <p className="mt-2">{selectedPatient.phone || 'Téléphone non renseigné'}</p>
                   <p>{selectedPatient.email || 'Email non renseigné'}</p>
-                  <p>{selectedPatient.address || 'Adresse non renseignée'}</p>
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4">
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Contexte</p>
@@ -483,10 +493,27 @@ export default function Patients() {
             </div>
           </div>
 
-          {renderInput('Adresse', 'address', { placeholder: 'Commune, wilaya, quartier...' })}
           <div className="grid gap-4 md:grid-cols-2">
-            {renderInput('Lien de radiographie', 'xRayUrl', { type: 'url', placeholder: 'https://...' })}
-            {renderInput('Lien d\'ordonnance', 'prescriptionUrl', { type: 'url', placeholder: 'https://...' })}
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Radiographie (Image)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleFileChange(e, 'xRayUrl')}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+              />
+              {form.xRayUrl && <p className="text-xs text-teal-600 font-bold">Image prête ✓</p>}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-semibold text-slate-700">Ordonnance (PDF)</label>
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={(e) => handleFileChange(e, 'prescriptionUrl')}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+              />
+              {form.prescriptionUrl && <p className="text-xs text-teal-600 font-bold">Fichier prêt ✓</p>}
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
