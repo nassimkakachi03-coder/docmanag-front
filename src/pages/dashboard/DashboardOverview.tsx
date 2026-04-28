@@ -160,7 +160,7 @@ export default function DashboardOverview() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-black text-slate-900">Rendez-vous du jour</h2>
-              <p className="text-sm text-slate-500">Accès rapide au planning opérationnel.</p>
+
             </div>
             <button onClick={() => navigate('/agenda')} className="text-sm font-bold text-teal-600 hover:underline">
               Voir l'agenda

@@ -237,7 +237,6 @@ export default function Agenda() {
         <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-black text-slate-900">Planning des rendez-vous</h2>
-            <p className="text-sm text-slate-500">Cliquez sur le bouton de statut pour passer "En cours" / "Terminé".</p>
           </div>
           <div className="relative w-full max-w-md">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

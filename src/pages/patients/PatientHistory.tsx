@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import axios from 'axios';
 import {
   ArrowLeft,
@@ -54,12 +54,18 @@ const formatDateTime = (value?: string) => {
 export default function PatientHistory() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { token } = useAuth();
   const headers = { Authorization: `Bearer ${token}` };
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'timeline' | 'appointments' | 'prescriptions' | 'billing'>('timeline');
+  const requestedTab = searchParams.get('tab');
+  const initialTab =
+    requestedTab === 'appointments' || requestedTab === 'prescriptions' || requestedTab === 'billing' || requestedTab === 'timeline'
+      ? requestedTab
+      : 'timeline';
+  const [activeTab, setActiveTab] = useState<'timeline' | 'appointments' | 'prescriptions' | 'billing'>(initialTab);
   const [xRayUrl, setXRayUrl] = useState('');
   const [prescriptionUrl, setPrescriptionUrl] = useState('');
   const [savingUrls, setSavingUrls] = useState(false);
@@ -83,6 +89,12 @@ export default function PatientHistory() {
   useEffect(() => {
     void loadHistory();
   }, [token, id]);
+
+  useEffect(() => {
+    if (requestedTab === 'appointments' || requestedTab === 'prescriptions' || requestedTab === 'billing' || requestedTab === 'timeline') {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'xRay' | 'prescription') => {
     const file = e.target.files?.[0];

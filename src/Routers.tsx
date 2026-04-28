@@ -5,6 +5,7 @@ import { useAuth } from './contexts/AuthContext';
 import AdminLayout from './layouts/AdminLayout';
 import Login from './pages/auth/Login';
 import DashboardOverview from './pages/dashboard/DashboardOverview';
+import Archives from './pages/patients/Archives';
 import Patients from './pages/patients/Patients';
 import PatientHistory from './pages/patients/PatientHistory';
 import Agenda from './pages/appointments/Agenda';
@@ -34,6 +35,7 @@ export const CustomRouters = () => {
         >
            <Route index element={<DashboardOverview />} />
            <Route path="patients" element={<Patients />} />
+           <Route path="archives" element={<Archives />} />
            <Route path="patients/:id/history" element={<PatientHistory />} />
            <Route path="agenda" element={<Agenda />} />
            <Route path="documents" element={<Documents />} />
