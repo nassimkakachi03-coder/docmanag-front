@@ -14,10 +14,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<any | null>(null);
 
   useEffect(() => {
-    if (!localStorage.getItem('purged_v2')) {
+    if (!localStorage.getItem('purged_v3')) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      localStorage.setItem('purged_v2', 'true');
+      localStorage.removeItem('purged_v2');
+      localStorage.setItem('purged_v3', 'true');
       setToken(null);
       setUser(null);
     } else {
