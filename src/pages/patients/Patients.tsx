@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router';
 import {
+  ArrowUpDown,
   BadgeCheck,
   FileText,
   Globe,
@@ -59,7 +60,17 @@ export default function Patients() {
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortKey, setSortKey] = useState<'name' | 'phone' | 'source' | 'updatedAt'>('updatedAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const itemsPerPage = 10;
+
+  const handleSort = (key: 'name' | 'phone' | 'source' | 'updatedAt') => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const SortIcon = ({ col }: { col: string }) => (
+    <ArrowUpDown className={`inline h-3 w-3 ml-1 ${sortKey === col ? 'text-teal-600' : 'text-slate-400'}`} />
+  );
 
   const fetchPatients = async () => {
     try {
@@ -89,27 +100,27 @@ export default function Patients() {
 
   const filteredPatients = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return patients;
+    let list = query
+      ? patients.filter(p =>
+          [p.firstName, p.lastName, p.phone, p.email, p.caseSummary, p.medicalHistory]
+            .filter(Boolean).join(' ').toLowerCase().includes(query)
+        )
+      : [...patients];
 
-    return patients.filter((patient) =>
-      [
-        patient.firstName,
-        patient.lastName,
-        patient.phone,
-        patient.email,
-        patient.caseSummary,
-        patient.medicalHistory,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    );
-  }, [patients, search]);
+    list.sort((a, b) => {
+      let va: any, vb: any;
+      if (sortKey === 'name') { va = `${a.firstName} ${a.lastName}`.toLowerCase(); vb = `${b.firstName} ${b.lastName}`.toLowerCase(); }
+      else if (sortKey === 'phone') { va = (a.phone || '').toLowerCase(); vb = (b.phone || '').toLowerCase(); }
+      else if (sortKey === 'source') { va = (a.source || '').toLowerCase(); vb = (b.source || '').toLowerCase(); }
+      else { va = new Date(a.updatedAt || a.createdAt).getTime(); vb = new Date(b.updatedAt || b.createdAt).getTime(); }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [patients, search, sortKey, sortDir]);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search]);
+  useEffect(() => { setCurrentPage(1); }, [search, sortKey, sortDir]);
 
   const paginatedPatients = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -272,11 +283,11 @@ export default function Patients() {
             <table className="min-w-full text-left">
               <thead className="bg-slate-50">
                 <tr className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-                  <th className="px-5 py-4">Patient</th>
-                  <th className="px-5 py-4">Contact</th>
-                  <th className="px-5 py-4">Origine</th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('name')}>Patient <SortIcon col="name" /></th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('phone')}>Contact <SortIcon col="phone" /></th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('source')}>Origine <SortIcon col="source" /></th>
                   <th className="px-5 py-4">Compte</th>
-                  <th className="px-5 py-4">Dernière mise à jour</th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('updatedAt')}>Mise à jour <SortIcon col="updatedAt" /></th>
                   <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
               </thead>

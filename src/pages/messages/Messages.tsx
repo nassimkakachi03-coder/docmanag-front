@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import axios from 'axios';
 import {
+  ArrowUpDown,
   Clock3,
   Mail,
   MailOpen,
   MessageSquare,
   Phone,
+  Search,
   Trash2,
   UserRound,
 } from 'lucide-react';
@@ -43,6 +45,33 @@ export default function Messages() {
   const [selectedMessage, setSelectedMessage] = useState<ContactMessage | null>(null);
 
   const unreadCount = useMemo(() => messages.filter((message) => !message.read).length, [messages]);
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<'date' | 'name'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const handleSort = (key: 'date' | 'name') => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const filteredSortedMessages = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = q
+      ? messages.filter(m =>
+          [`${m.firstName} ${m.lastName}`, m.name, m.email, m.subject, m.message]
+            .filter(Boolean).join(' ').toLowerCase().includes(q)
+        )
+      : [...messages];
+    list.sort((a, b) => {
+      let va: any, vb: any;
+      if (sortKey === 'name') { va = `${a.firstName} ${a.lastName}`.toLowerCase(); vb = `${b.firstName} ${b.lastName}`.toLowerCase(); }
+      else { va = new Date(a.createdAt).getTime(); vb = new Date(b.createdAt).getTime(); }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [messages, search, sortKey, sortDir]);
 
   const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
 
@@ -115,11 +144,26 @@ export default function Messages() {
       ) : (
         <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
           <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{messages.length} messages</p>
+            <div className="border-b border-slate-100 px-5 py-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{filteredSortedMessages.length} messages</p>
+                <div className="flex gap-2">
+                  <button onClick={() => handleSort('date')} className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-bold transition ${sortKey === 'date' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    <ArrowUpDown className="h-3 w-3" /> Date
+                  </button>
+                  <button onClick={() => handleSort('name')} className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-bold transition ${sortKey === 'name' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    <ArrowUpDown className="h-3 w-3" /> Nom
+                  </button>
+                </div>
+              </div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un message..."
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10" />
+              </div>
             </div>
-            <ul className="max-h-[720px] divide-y divide-slate-100 overflow-y-auto">
-              {messages.map((message) => {
+            <ul className="max-h-[680px] divide-y divide-slate-100 overflow-y-auto">
+              {filteredSortedMessages.map((message) => {
                 const fullName = `${message.firstName || ''} ${message.lastName || ''}`.trim() || message.name;
 
                 return (

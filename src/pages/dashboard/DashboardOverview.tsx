@@ -182,7 +182,13 @@ export default function DashboardOverview() {
                       <p className="font-semibold text-slate-900">
                         {new Date(appointment.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                       </p>
-                      <p>{appointment.duration || 30} min</p>
+                      <p className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-bold ${
+                        ['EnCours','Scheduled','Pending'].includes(appointment.status)
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {['EnCours','Scheduled','Pending'].includes(appointment.status) ? 'En cours' : 'Terminé'}
+                      </p>
                     </div>
                   </div>
                 </article>

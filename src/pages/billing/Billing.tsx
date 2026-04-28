@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
+  ArrowUpDown,
   BadgeEuro,
   CreditCard,
   Landmark,
@@ -67,7 +68,17 @@ export default function Billing() {
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortKey, setSortKey] = useState<string>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const itemsPerPage = 10;
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const SortIcon = ({ col }: { col: string }) => (
+    <ArrowUpDown className={`inline h-3 w-3 ml-1 ${sortKey === col ? 'text-emerald-600' : 'text-slate-400'}`} />
+  );
 
   const fetchData = async () => {
     try {
@@ -91,43 +102,47 @@ export default function Billing() {
 
   const filteredInvoices = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return invoices;
-
-    return invoices.filter((invoice) =>
-      [
-        invoice.patientName,
-        invoice.patientId?.firstName,
-        invoice.patientId?.lastName,
-        invoice.items?.map((item: any) => item.description).join(' '),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    );
-  }, [invoices, search]);
+    let list = query
+      ? invoices.filter(inv =>
+          [inv.patientName, inv.patientId?.firstName, inv.patientId?.lastName, inv.items?.map((i: any) => i.description).join(' ')]
+            .filter(Boolean).join(' ').toLowerCase().includes(query)
+        )
+      : [...invoices];
+    list.sort((a, b) => {
+      let va: any, vb: any;
+      if (sortKey === 'patient') { va = (a.patientName || '').toLowerCase(); vb = (b.patientName || '').toLowerCase(); }
+      else if (sortKey === 'amount') { va = a.totalAmount || 0; vb = b.totalAmount || 0; }
+      else if (sortKey === 'status') { va = (a.status || '').toLowerCase(); vb = (b.status || '').toLowerCase(); }
+      else { va = new Date(a.createdAt).getTime(); vb = new Date(b.createdAt).getTime(); }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [invoices, search, sortKey, sortDir]);
 
   const filteredPayments = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return payments;
+    let list = query
+      ? payments.filter(p =>
+          [p.invoiceId?.patientName, p.invoiceId?.patientId?.firstName, p.invoiceId?.patientId?.lastName, paymentMethodLabels[p.method] || p.method]
+            .filter(Boolean).join(' ').toLowerCase().includes(query)
+        )
+      : [...payments];
+    list.sort((a, b) => {
+      let va: any, vb: any;
+      if (sortKey === 'patient') { va = (a.invoiceId?.patientName || '').toLowerCase(); vb = (b.invoiceId?.patientName || '').toLowerCase(); }
+      else if (sortKey === 'amount') { va = a.amount || 0; vb = b.amount || 0; }
+      else if (sortKey === 'method') { va = (a.method || '').toLowerCase(); vb = (b.method || '').toLowerCase(); }
+      else { va = new Date(a.date || a.createdAt).getTime(); vb = new Date(b.date || b.createdAt).getTime(); }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return list;
+  }, [payments, search, sortKey, sortDir]);
 
-    return payments.filter((payment) =>
-      [
-        payment.invoiceId?.patientName,
-        payment.invoiceId?.patientId?.firstName,
-        payment.invoiceId?.patientId?.lastName,
-        paymentMethodLabels[payment.method] || payment.method,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(query)
-    );
-  }, [payments, search]);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, activeTab]);
+  useEffect(() => { setCurrentPage(1); }, [search, activeTab, sortKey, sortDir]);
 
   const paginatedInvoices = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -323,17 +338,18 @@ export default function Billing() {
               <thead className="bg-slate-50">
                 <tr className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
                   <th className="px-5 py-4">Référence</th>
-                  <th className="px-5 py-4">Patient</th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('patient')}>Patient <SortIcon col="patient" /></th>
                   <th className="px-5 py-4">Acte / soin</th>
-                  <th className="px-5 py-4">Montant</th>
-                  <th className="px-5 py-4">Statut</th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('amount')}>Montant <SortIcon col="amount" /></th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('status')}>Statut <SortIcon col="status" /></th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('createdAt')}>Date <SortIcon col="createdAt" /></th>
                   <th className="px-5 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedInvoices.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-16 text-center text-sm font-medium text-slate-400">
+                    <td colSpan={7} className="px-5 py-16 text-center text-sm font-medium text-slate-400">
                       {search ? `Aucune facture pour « ${search} ».` : 'Aucune facture enregistrée.'}
                     </td>
                   </tr>
@@ -350,6 +366,9 @@ export default function Billing() {
                         <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${invoiceStatusStyles[invoice.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                           {invoiceStatusLabels[invoice.status] || invoice.status}
                         </span>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-500">
+                        {new Date(invoice.createdAt).toLocaleDateString('fr-FR')}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex justify-end gap-2">
@@ -397,11 +416,11 @@ export default function Billing() {
             <table className="min-w-full text-left">
               <thead className="bg-slate-50">
                 <tr className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-                  <th className="px-5 py-4">Patient</th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('patient')}>Patient <SortIcon col="patient" /></th>
                   <th className="px-5 py-4">Facture</th>
-                  <th className="px-5 py-4">Méthode</th>
-                  <th className="px-5 py-4">Date</th>
-                  <th className="px-5 py-4">Montant</th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('method')}>Méthode <SortIcon col="method" /></th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('createdAt')}>Date <SortIcon col="createdAt" /></th>
+                  <th className="cursor-pointer px-5 py-4" onClick={() => handleSort('amount')}>Montant <SortIcon col="amount" /></th>
                 </tr>
               </thead>
               <tbody>
