@@ -7,14 +7,12 @@ import {
   BadgeCheck,
   FileText,
   Globe,
-  History,
   Mail,
   Pencil,
   Phone,
   Search,
   ShieldCheck,
   Stethoscope,
-  Trash2,
   UserPlus,
 } from 'lucide-react';
 import Modal from '../../components/Modal';
@@ -226,7 +224,7 @@ export default function Patients() {
       await axios.delete(`${API}/patients/${id}`, { headers });
       await fetchPatients();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Suppression impossible.');
+      alert(error.response?.data?.message || "Archivage impossible.");
     }
   };
 
@@ -343,8 +341,8 @@ export default function Patients() {
                   return (
                     <tr
                       key={patient._id}
-                      className="cursor-pointer border-t border-slate-100 transition hover:bg-slate-50"
-                      onClick={() => navigate(`/patients/${patient._id}/history`)}
+                      className="border-t border-slate-100 transition hover:bg-slate-50"
+                      onDoubleClick={() => navigate(`/patients/${patient._id}/history`)}
                     >
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
@@ -388,13 +386,6 @@ export default function Patients() {
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
                           <button
-                            onClick={() => navigate(`/patients/${patient._id}/history?tab=timeline`)}
-                            className="rounded-xl bg-teal-50 p-2 text-teal-600 transition hover:bg-teal-100"
-                            title="Historique"
-                          >
-                            <History className="h-4 w-4" />
-                          </button>
-                          <button
                             onClick={() => openEditModal(patient)}
                             className="rounded-xl bg-blue-50 p-2 text-blue-600 transition hover:bg-blue-100"
                             title="Modifier"
@@ -403,10 +394,11 @@ export default function Patients() {
                           </button>
                           <button
                             onClick={() => handleDelete(patient._id)}
-                            className="rounded-xl bg-red-50 p-2 text-red-500 transition hover:bg-red-100"
+                            className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-600 transition hover:bg-red-100"
                             title="Archiver"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Archive className="h-4 w-4" />
+                            Archive
                           </button>
                         </div>
                       </td>
